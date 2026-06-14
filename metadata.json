@@ -1,0 +1,10 @@
+{
+  "name": "ホテル周辺デジタルコンシェルジュ",
+  "description": "ホテルの宿泊客が客室のQRコード等からアクセスし、周辺のおすすめ飲食店やイベント情報を探せる多言語デジタルコンシェルジュサービス。スタッフ専用CMSによるスポット登録やAI自動翻訳、PV・統計ダッシュボードも備えています。",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

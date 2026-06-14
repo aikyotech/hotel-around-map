@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-display: "Space Grotesk", sans-serif;
+}
+
+/* Custom Leaflet Marker Styling override */
+.leaflet-container {
+  font-family: 'Inter', sans-serif !important;
+}
+
+/* Pulsing GPS animations */
+@keyframes marker-pulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.gps-pulse-ring {
+  border: 3px solid #3b82f6;
+  border-radius: 50%;
+  background-color: rgba(59, 130, 246, 0.25);
+  animation: marker-pulse 1.8s infinite ease-out;
+}
+
+/* Star selection marker pulse */
+@keyframes star-pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+  }
+  70% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 10px rgba(245, 158, 11, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+}
+
+.star-pulse-marker {
+  animation: star-pulse 2s infinite ease-in-out;
+}
+
