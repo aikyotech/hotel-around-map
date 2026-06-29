@@ -5,7 +5,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useDragControls, useMotionValue, animate } from 'motion/react';
 import { 
   MapPin, 
   Map as MapIcon, 
@@ -23,10 +23,9 @@ import {
   Maximize2,
   Navigation,
   Globe,
-  Settings,
   Info
 } from 'lucide-react';
-import { Spot, LanguageCode, UI_TRANSLATIONS, LANGUAGE_LABELS, TAG_OPTIONS } from '../types';
+import { Spot, CalendarEvent, LanguageCode, UI_TRANSLATIONS, LANGUAGE_LABELS, TAG_LABEL_TRANSLATIONS } from '../types';
 
 interface GuestViewProps {
   onGoToCms: () => void;
@@ -38,21 +37,46 @@ interface Coords {
   lng: number;
 }
 
+const LANG_STORAGE_KEY = 'concierge_lang';
+
 export default function GuestView({ onGoToCms }: GuestViewProps) {
-  // Lang state strictly locked to Japanese (multilingual support removed)
-  const lang: LanguageCode = 'ja';
+  const [lang, setLang] = useState<LanguageCode>(() => {
+    try {
+      const saved = localStorage.getItem(LANG_STORAGE_KEY) as LanguageCode | null;
+      if (saved && saved in LANGUAGE_LABELS) return saved;
+    } catch {}
+    return 'ja';
+  });
+  const [isLangMenuOpen, setIsLangMenuOpen] = useState<boolean>(false);
+  const [isCalendarOpen, setIsCalendarOpen] = useState<boolean>(false);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LANG_STORAGE_KEY, lang);
+    } catch {}
+  }, [lang]);
 
   const [hotelConfig, setHotelConfig] = useState({
-    name: '京都祇園グランドホテル',
-    latitude: 35.0037,
-    longitude: 135.7782,
+    name: 'ラ・ロンコントル',
+    latitude: 33.833395132000696,
+    longitude: 132.76678651517162,
   });
 
   const [spots, setSpots] = useState<Spot[]>([]);
-  const [selectedTags, setSelectedTags] = useState<string[]>(['#すべて']);
   const [selectedSpot, setSelectedSpot] = useState<Spot | null>(null);
-  const [isSheetExpanded, setIsSheetExpanded] = useState<boolean>(false);
-  
+  const [sheetVisible, setSheetVisible] = useState(false);
+  const sheetY = useMotionValue(0);
+  const dragControls = useDragControls();
+
+  useEffect(() => {
+    if (selectedSpot) {
+      sheetY.set(window.innerHeight);
+      setSheetVisible(true);
+      animate(sheetY, window.innerHeight * 0.46, { type: 'spring', damping: 25, stiffness: 220 });
+    }
+  }, [selectedSpot]);
+
   // GPS State
   const [gpsActive, setGpsActive] = useState<boolean>(false);
   const [userLocation, setUserLocation] = useState<Coords>({
@@ -90,6 +114,13 @@ export default function GuestView({ onGoToCms }: GuestViewProps) {
         const activeSpots = data.filter((s: Spot) => s.status === 'active');
         setSpots(activeSpots);
       }
+
+      // Auto-fetched local events without a reliable venue location: shown as a calendar
+      // list instead of map pins, so they're loaded separately from /api/spots.
+      const evRes = await fetch('/api/events');
+      if (evRes.ok) {
+        setCalendarEvents(await evRes.json());
+      }
     } catch (e) {
       console.error('Error fetching spots/hotel:', e);
     }
@@ -97,15 +128,21 @@ export default function GuestView({ onGoToCms }: GuestViewProps) {
 
   useEffect(() => {
     fetchSpots();
-    
+
     // Register absolute Page View (PV) to Express Statistics store
     fetch('/api/stats/pv', { method: 'POST' }).catch(() => {});
   }, []);
 
-  // Set up leafet map instance
+  // Set up the Leaflet map instance once on mount. Deliberately does NOT depend on
+  // hotelConfig.latitude/longitude: recreating the whole map every time hotel coordinates
+  // change (e.g. once the real coords arrive shortly after the initial placeholder render)
+  // raced with React StrictMode's double-invoked effects and threw
+  // "Failed to execute 'removeChild' on 'Node'" while one create/destroy cycle was still
+  // mid-flight. Position/name updates after the first mount are handled by the effect below,
+  // which only moves the existing marker instead of tearing down and rebuilding the map.
   useEffect(() => {
-    if (!mapContainerRef.current) return;
-    
+    if (!mapContainerRef.current || mapInstanceRef.current) return;
+
     // Create Map
     const map = L.map(mapContainerRef.current, {
       zoomControl: false, // Customized buttons
@@ -144,16 +181,29 @@ export default function GuestView({ onGoToCms }: GuestViewProps) {
     const hotelMarker = L.marker([hotelConfig.latitude, hotelConfig.longitude], { icon: hotelIcon })
       .addTo(map)
       .bindTooltip(hotelConfig.name, { permanent: true, direction: 'top', className: 'text-xs font-bold px-2.5 py-1 rounded-md border-indigo-200 bg-indigo-50 text-indigo-905 shadow-sm shadow-indigo-500/10' });
-    
+
     hotelMarkerRef.current = hotelMarker;
 
     return () => {
       // Clean up on component unmount
       map.remove();
       mapInstanceRef.current = null;
+      hotelMarkerRef.current = null;
       setMapLoaded(false);
     };
-  }, [hotelConfig.latitude, hotelConfig.longitude]);
+  }, []);
+
+  // Move the existing hotel marker / map center when hotel coordinates change, instead of
+  // recreating the whole map instance (see note on the effect above).
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    const marker = hotelMarkerRef.current;
+    if (!map || !marker) return;
+
+    marker.setLatLng([hotelConfig.latitude, hotelConfig.longitude]);
+    marker.setTooltipContent(hotelConfig.name);
+    map.panTo([hotelConfig.latitude, hotelConfig.longitude]);
+  }, [hotelConfig.latitude, hotelConfig.longitude, hotelConfig.name, mapLoaded]);
 
   // Handle GPS location icon change
   useEffect(() => {
@@ -186,36 +236,6 @@ export default function GuestView({ onGoToCms }: GuestViewProps) {
 
   }, [userLocation]);
 
-  // Core Tag filtration criteria
-  const isSpotMatched = (spot: Spot): boolean => {
-    if (selectedTags.includes('#すべて')) return true;
-    
-    // Check tags OR conditions
-    return selectedTags.every(tag => {
-      if (tag === '#すべて') return true;
-      if (tag === '#スタッフ厳選') return spot.source === 'hotel_master';
-      if (tag === '#本日開催イベント') {
-        if (spot.type !== 'event') return false;
-        // Verify if has event timeframe and overlaps today
-        const todayStr = new Date().toISOString().split('T')[0];
-        if (spot.event_start_at && spot.event_end_at) {
-          return todayStr >= spot.event_start_at && todayStr <= spot.event_end_at;
-        }
-        return true; // Active generic event
-      }
-      if (tag === '#徒歩5分以内') {
-        const dist = computeDistanceLocal(
-          hotelConfig.latitude,
-          hotelConfig.longitude,
-          spot.latitude,
-          spot.longitude
-        );
-        return dist <= 400; // Under 5 minutes (80m/min * 5min = 400m)
-      }
-      return spot.tags.includes(tag);
-    });
-  };
-
   // Local calculation of distance to ensure instant updates with Simulated movement
   const computeDistanceLocal = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
     const R = 6371000;
@@ -242,11 +262,8 @@ export default function GuestView({ onGoToCms }: GuestViewProps) {
     });
     markersRef.current = {};
 
-    // Filter spots
-    const matchedSpots = spots.filter(isSpotMatched);
-
     // Add Pins
-    matchedSpots.forEach(spot => {
+    spots.forEach(spot => {
       const isSelected = selectedSpot?.id === spot.id;
       const isStaffPick = spot.source === 'hotel_master';
       
@@ -306,9 +323,9 @@ export default function GuestView({ onGoToCms }: GuestViewProps) {
       const googleMapsUrlStr = spot.google_maps_url || `https://www.google.com/maps/search/?api=1&query=${spot.latitude},${spot.longitude}`;
       const popupHtml = `
         <div class="p-1 font-sans text-slate-800" style="min-width: 120px;">
-          <p class="font-bold text-xs mb-1">${spot.name.ja}</p>
+          <p class="font-bold text-xs mb-1">${spot.name[lang] || spot.name.ja}</p>
           <a href="${googleMapsUrlStr}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center text-[10px] font-bold text-indigo-600 hover:underline">
-            Googleマップで開く ↗
+            ${t('openInGoogleMaps')} ↗
           </a>
         </div>
       `;
@@ -318,14 +335,13 @@ export default function GuestView({ onGoToCms }: GuestViewProps) {
         .bindPopup(popupHtml, { closeButton: false, offset: [0, -24] })
         .on('click', () => {
           setSelectedSpot(spot);
-          setIsSheetExpanded(false);
           map.setView([spot.latitude - 0.001, spot.longitude], 17, { animate: true });
         });
 
       markersRef.current[spot.id] = marker;
     });
 
-  }, [spots, selectedTags, selectedSpot, mapLoaded, hotelConfig]);
+  }, [spots, selectedSpot, mapLoaded, hotelConfig, lang]);
 
   // Track user real-time position with browser Geolocator
   const toggleGpsTracking = () => {
@@ -361,25 +377,6 @@ export default function GuestView({ onGoToCms }: GuestViewProps) {
     }
   };
 
-  // Tag chip multi-selector trigger
-  const handleTagClick = (tag: string) => {
-    if (tag === '#すべて') {
-      setSelectedTags(['#すべて']);
-      return;
-    }
-
-    let filterList = [...selectedTags].filter(t => t !== '#すべて');
-    if (filterList.includes(tag)) {
-      filterList = filterList.filter(t => t !== tag);
-      if (filterList.length === 0) {
-        filterList = ['#すべて'];
-      }
-    } else {
-      filterList.push(tag);
-    }
-    setSelectedTags(filterList);
-  };
-
   // Helper translations lookup
   const t = (key: string, variables: Record<string, any> = {}): string => {
     const translations = UI_TRANSLATIONS[lang] || UI_TRANSLATIONS['ja'];
@@ -400,6 +397,14 @@ export default function GuestView({ onGoToCms }: GuestViewProps) {
   };
 
   // Navigation Deeplink builder
+  const closeSheet = () => {
+    animate(sheetY, window.innerHeight, { type: 'spring', damping: 28, stiffness: 200 })
+      .then(() => {
+        setSelectedSpot(null);
+        setSheetVisible(false);
+      });
+  };
+
   const handleNavigationRedirect = (spot: Spot) => {
     // Prefer registered Google Maps URL if available
     if (spot.google_maps_url && spot.google_maps_url.trim() !== '') {
@@ -418,65 +423,140 @@ export default function GuestView({ onGoToCms }: GuestViewProps) {
   return (
     <div className="relative w-full h-[100dvh] bg-slate-900 flex flex-col overflow-hidden select-none">
       
-      {/* 1. TOP MOBILE HEADER */}
-      <header className="absolute top-0 left-0 right-0 h-14 bg-white border-b border-slate-250 flex items-center justify-between px-5 shrink-0 z-[1000] shadow-sm">
+      {/* 1. TOP MOBILE HEADER (fixed, always the topmost layer above any sheet/panel/menu) */}
+      <header className="fixed top-0 left-0 right-0 h-14 bg-white border-b border-slate-250 flex items-center justify-between px-5 shrink-0 z-[1500] shadow-sm">
         <div className="flex items-center gap-2">
-          {/* Elegant Crest Hotel Icon - Indigo Serif Style */}
-          <div className="w-7 h-7 bg-indigo-900 rounded-sm flex items-center justify-center text-white font-serif italic font-bold text-lg shrink-0">
-            G
-          </div>
-          <div className="flex flex-col">
-            <h1 className="font-bold text-slate-800 tracking-tight text-[11px] sm:text-xs leading-none uppercase">
-              {hotelConfig.name}
-            </h1>
-            <p className="text-[8px] font-mono text-slate-400 tracking-wider font-semibold uppercase mt-0.5">
-              {t('appTitle')}
-            </p>
-          </div>
+          <h1 className="font-bold text-slate-800 tracking-tight text-sm leading-none">
+            {hotelConfig.name}
+          </h1>
         </div>
 
         {/* CONTROLS */}
-        <div className="flex items-center gap-2">
-          {/* CMS Link Button */}
-          <button 
-            id="btn-guest-cms-toggle"
-            onClick={onGoToCms}
-            className="w-7 h-7 bg-slate-100 hover:bg-indigo-900 hover:text-white active:scale-95 duration-150 rounded flex items-center justify-center text-slate-600 border border-slate-200 transition-colors"
-            title={t('cmsButton')}
+        <div className="flex items-center gap-2 relative">
+          {/* Local Event Calendar (auto-fetched, no venue coordinates so kept off the map) */}
+          <button
+            id="btn-guest-calendar-toggle"
+            onClick={() => setIsCalendarOpen(true)}
+            className="w-10 h-10 bg-slate-100 hover:bg-indigo-900 hover:text-white active:scale-95 duration-150 rounded flex items-center justify-center text-slate-600 border border-slate-200 transition-colors"
+            title={t('eventCalendarButton')}
           >
-            <Settings className="w-3.5 h-3.5" />
+            <Calendar className="w-5 h-5" />
+          </button>
+
+          {/* Language Selector */}
+          <button
+            id="btn-guest-lang-toggle"
+            onClick={() => setIsLangMenuOpen(prev => !prev)}
+            className="w-10 h-10 bg-slate-100 hover:bg-indigo-900 hover:text-white active:scale-95 duration-150 rounded flex items-center justify-center text-slate-600 border border-slate-200 transition-colors"
+            title={t('selectLanguage')}
+          >
+            <Globe className="w-5 h-5" />
           </button>
         </div>
       </header>
 
-      {/* 2. CHIP TAG BAR (FLOATING UNDER THE HEADER) */}
-      <div className="absolute top-14 left-0 right-0 h-12 z-[1000] overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden flex items-center px-4 gap-2 pointer-events-auto bg-white/90 backdrop-blur-sm border-b border-slate-200">
-        {TAG_OPTIONS.map((tag) => {
-          const isSelected = selectedTags.includes(tag);
-          // Translate tags dynamically index-wise or just tags label
-          let label = tag.replace('#', '');
-          if (tag === '#すべて') label = t('categoryAll');
-          if (tag === '#スタッフ厳選') label = '★ ' + t('spotLabelHotelSelected');
-          if (tag === '#本日開催イベント') label = t('statusTodayEvent');
+      {/* LANGUAGE MENU (rendered above header/tag-bar stacking contexts, fixed to viewport) */}
+      {isLangMenuOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-[1199]"
+            onClick={() => setIsLangMenuOpen(false)}
+          />
+          <div className="fixed top-[60px] right-14 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden z-[1200] min-w-[120px]">
+            {(Object.keys(LANGUAGE_LABELS) as LanguageCode[]).map(code => (
+              <button
+                key={code}
+                id={`btn-lang-option-${code}`}
+                onClick={() => {
+                  setLang(code);
+                  setIsLangMenuOpen(false);
+                }}
+                className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-xs text-left transition-colors ${
+                  lang === code ? 'bg-indigo-50 text-indigo-900 font-bold' : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <span>{LANGUAGE_LABELS[code]}</span>
+                {lang === code && <Check className="w-3.5 h-3.5 text-indigo-600" />}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
-          return (
-            <button
-              id={`tag-chip-${tag.replace('#', '')}`}
-              key={tag}
-              onClick={() => handleTagClick(tag)}
-              className={`flex-shrink-0 px-4 py-1.5 rounded-full text-xs transition-all duration-150 cursor-pointer ${
-                isSelected 
-                  ? 'bg-indigo-900 text-white font-bold shadow' 
-                  : 'bg-slate-100 text-slate-600 border border-slate-200 font-semibold hover:bg-slate-200 hover:text-slate-800'
-              }`}
+      {/* EVENT CALENDAR PANEL (auto-fetched local listings without a reliable venue location,
+          shown as a list instead of map pins so the date/title never gets paired with a
+          guessed pin position) */}
+      <AnimatePresence>
+        {isCalendarOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/40 z-[1299]"
+              onClick={() => setIsCalendarOpen(false)}
+            />
+            <motion.div
+              id="event-calendar-panel"
+              initial={{ y: '100%' }}
+              animate={{ y: '0%' }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 240 }}
+              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl z-[1300] overflow-hidden flex flex-col"
+              style={{ maxHeight: '75dvh' }}
             >
-              {label}
-            </button>
-          );
-        })}
-      </div>
+              <div className="p-5 border-b border-slate-100 flex items-start justify-between gap-3 shrink-0">
+                <div>
+                  <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-1.5">
+                    <Calendar className="w-4.5 h-4.5 text-rose-500" />
+                    {t('eventCalendarTitle')}
+                  </h2>
+                  <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">{t('eventCalendarSubtitle')}</p>
+                </div>
+                <button
+                  id="btn-calendar-close"
+                  onClick={() => setIsCalendarOpen(false)}
+                  className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 shrink-0"
+                >
+                  <ChevronDown className="w-4.5 h-4.5" />
+                </button>
+              </div>
 
-      {/* 3. LEAFLET MAP ELEMENT */}
+              <div className="flex-1 overflow-y-auto overscroll-contain p-5 space-y-3">
+                {calendarEvents.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-8">{t('eventCalendarEmpty')}</p>
+                ) : (
+                  calendarEvents.map(ev => (
+                    <div key={ev.id} className="border border-slate-100 rounded-2xl p-4">
+                      <p className="text-sm font-bold text-slate-800 leading-snug">{ev.title}</p>
+                      {ev.summary && (
+                        <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">{ev.summary}</p>
+                      )}
+                      <div className="flex items-center justify-between mt-2.5">
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {ev.publishedAt ? new Date(ev.publishedAt).toLocaleDateString(lang === 'ja' ? 'ja-JP' : 'en-US') : ''}
+                        </span>
+                        {ev.link && (
+                          <a
+                            href={ev.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center text-[11px] font-bold text-indigo-600 hover:underline"
+                          >
+                            {t('eventCalendarViewDetails')} <ExternalLink className="w-3 h-3 ml-1" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* 2. LEAFLET MAP ELEMENT */}
       <div 
         id="leaflet-base-map"
         ref={mapContainerRef} 
@@ -500,95 +580,67 @@ export default function GuestView({ onGoToCms }: GuestViewProps) {
         </button>
       </div>
 
-      {/* 5. SLIDING BOTTOM SHEET FOR DETAIL */}
-      <AnimatePresence>
-        {selectedSpot && (
-          <motion.div
-            id="spot-detail-bottom-sheet"
-            initial={{ y: '100%' }}
-            animate={{ y: isSheetExpanded ? '0%' : '55%' }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', damping: 25, stiffness: 220 }}
-            className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl border-t border-slate-100 shadow-2xl z-[1001] overflow-hidden flex flex-col"
-            style={{ height: '80dvh' }}
+      {/* 5. DRAGGABLE BOTTOM SHEET: opens at 50%, drag handle freely, auto-close below 50% */}
+      {sheetVisible && selectedSpot && (
+        <motion.div
+          id="spot-detail-bottom-sheet"
+          style={{ y: sheetY, height: '92dvh' }}
+          drag="y"
+          dragControls={dragControls}
+          dragListener={false}
+          dragConstraints={{ top: 0 }}
+          dragElastic={{ top: 0.1, bottom: 0 }}
+          onDragEnd={(_, info) => {
+            const currentY = sheetY.get();
+            const halfPx = window.innerHeight * 0.46;
+            if (currentY > halfPx || info.velocity.y > 500) {
+              closeSheet();
+            }
+          }}
+          className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl border-t border-slate-100 shadow-2xl z-[1001] overflow-hidden flex flex-col"
+        >
+          {/* Sheet Handle */}
+          <div
+            className="relative h-10 w-full flex items-center justify-center shrink-0 cursor-grab active:cursor-grabbing touch-none"
+            onPointerDown={(e) => dragControls.start(e)}
           >
-            {/* Sheet Handle */}
-            <div 
-              className="h-8 w-full flex items-center justify-center cursor-pointer hover:bg-slate-50 active:bg-slate-100 shrink-0"
-              onClick={() => setIsSheetExpanded(!isSheetExpanded)}
+            <div className="w-12 h-1.5 bg-slate-300 rounded-full"></div>
+            <button
+              id="btn-sheet-close"
+              onClick={closeSheet}
+              className="absolute right-3 top-1.5 w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition"
             >
-              <div className="w-12 h-1.5 bg-slate-300 rounded-full mt-1"></div>
-            </div>
+              <ChevronDown className="w-4 h-4" />
+            </button>
+          </div>
 
-            {/* Main Content Area */}
-            <div className="flex-1 overflow-y-auto pb-8">
-              
-              {/* Cover Photo with Quick Close */}
-              <div className="relative h-44 md:h-52 bg-slate-200 w-full overflow-hidden shrink-0">
-                <img 
-                  src={(selectedSpot.image_urls && selectedSpot.image_urls[0]) || 'https://images.unsplash.com/photo-1542051841857-5f90071e7989?w=600'} 
-                  alt={selectedSpot.name[lang] || selectedSpot.name.ja} 
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
-                
-                {/* Floating Dismiss Button */}
-                <button
-                  id="btn-sheet-close"
-                  onClick={() => {
-                    setSelectedSpot(null);
-                    setIsSheetExpanded(false);
-                  }}
-                  className="absolute top-4 right-4 w-9 h-9 rounded-full bg-black/60 backdrop-blur-sm text-white flex items-center justify-center hover:bg-black/85 transition"
-                >
-                  <ChevronDown className="w-5 h-5" />
-                </button>
-
-                {/* Badges Overlay */}
-                <div className="absolute bottom-4 left-4 flex gap-1.5">
-                  <span className={`px-2.5 py-1 rounded-sm text-[10px] font-bold tracking-wider text-white shadow-sm uppercase ${
-                    selectedSpot.source === 'hotel_master' ? 'bg-amber-500' : 'bg-indigo-900'
+            {/* Main Content Area (scrollable; overscroll-contain stops the scroll bounce from
+                revealing the dark page background behind the sheet) */}
+            <div className="flex-1 overflow-y-auto overscroll-contain pb-8">
+              <div className="px-6 pt-2">
+                {/* Badges */}
+                <div className="flex gap-1.5 mb-2">
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${
+                    selectedSpot.source === 'hotel_master' ? 'bg-amber-100 text-amber-800' : 'bg-indigo-50 text-indigo-800'
                   }`}>
-                    {selectedSpot.source === 'hotel_master' ? '★ ' + t('spotLabelHotelSelected') : t('spotLabelGeneral')}
+                    {selectedSpot.source === 'hotel_master' ? t('spotLabelHotelSelected') : t('spotLabelGeneral')}
                   </span>
-                  <span className="px-2.5 py-1 rounded-sm text-[10px] font-bold tracking-wider text-white bg-slate-900/80 shadow-sm uppercase">
+                  <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase">
                     {selectedSpot.type === 'restaurant' ? t('categoryRestaurant') : selectedSpot.type === 'event' ? t('categoryEvent') : t('categorySightseeing')}
                   </span>
                 </div>
-              </div>
 
-              {/* Text Descriptions */}
-              <div className="p-6">
-                {/* Title & Live Walk score inline header summary */}
-                <div className="flex justify-between items-start mb-4 gap-4 border-b border-slate-100 pb-4">
-                  <div className="flex flex-col gap-1">
-                    <div className="flex gap-1.5 mb-1">
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${
-                        selectedSpot.source === 'hotel_master' ? 'bg-amber-100 text-amber-800' : 'bg-indigo-50 text-indigo-800'
-                      }`}>
-                        {selectedSpot.source === 'hotel_master' ? t('spotLabelHotelSelected') : t('spotLabelGeneral')}
-                      </span>
-                      <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase">
-                        {selectedSpot.type === 'restaurant' ? t('categoryRestaurant') : selectedSpot.type === 'event' ? t('categoryEvent') : t('categorySightseeing')}
-                      </span>
-                    </div>
-                    <h2 className="text-xl font-extrabold text-slate-900 leading-tight">
-                      {selectedSpot.name[lang] || selectedSpot.name.ja}
-                    </h2>
-                  </div>
-
+                {/* Name + live distance */}
+                <div className="flex justify-between items-start gap-4 mb-3">
+                  <h2 className="text-xl font-extrabold text-slate-900 leading-tight">
+                    {selectedSpot.name[lang] || selectedSpot.name.ja}
+                  </h2>
                   {(() => {
                     const { dist, min } = getLiveSpotDetails(selectedSpot);
                     return (
-                      <div className="text-right shrink-0">
-                        <div className="text-xs font-bold text-indigo-600 flex items-center justify-end gap-1">
-                          <span>{t('distanceWalk', { min, dist }).split(' / ')[0]}</span>
-                          <span className="text-[10px] text-slate-400">/ {dist}m</span>
-                        </div>
-                        <div className="text-[10px] font-medium text-emerald-600 flex items-center justify-end gap-1 mt-1">
-                          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-                          {t('statusOpen')}
-                        </div>
+                      <div className="text-xs font-bold text-indigo-600 flex items-center justify-end gap-1 shrink-0 mt-1">
+                        <span>{t('distanceWalk', { min, dist }).split(' / ')[0]}</span>
+                        <span className="text-[10px] text-slate-400">/ {dist}m</span>
                       </div>
                     );
                   })()}
@@ -611,35 +663,44 @@ export default function GuestView({ onGoToCms }: GuestViewProps) {
 
                 {/* Tags section */}
                 {selectedSpot.tags && selectedSpot.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-5">
+                  <div className="flex flex-wrap gap-1.5 mt-4">
                     {selectedSpot.tags.map(tag => (
                       <span key={tag} className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-                        {tag}
+                        {TAG_LABEL_TRANSLATIONS[tag]?.[lang] || tag}
                       </span>
                     ))}
                   </div>
                 )}
               </div>
-            </div>
 
-            {/* Bottom Actions Sticky bar */}
-            <div className="p-4 border-t border-slate-100 bg-slate-50 flex space-x-3 shrink-0">
-              <button
-                id="btn-trigger-navigation"
-                onClick={() => handleNavigationRedirect(selectedSpot)}
-                className="w-full py-3.5 bg-indigo-900 hover:bg-indigo-950 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-lg"
-              >
-                <Navigation className="w-4.5 h-4.5" />
-                {/iPad|iPhone|iPod/.test(navigator.userAgent) ? t('routeGuidanceApple') : t('routeGuidance')}
-                <ExternalLink className="w-3.5 h-3.5 ml-1.5 opacity-60" />
-              </button>
+              {/* Cover Photo */}
+              <div className="relative h-44 md:h-52 bg-slate-200 w-full overflow-hidden mt-5">
+                <img
+                  src={(selectedSpot.image_urls && selectedSpot.image_urls[0]) || 'https://images.unsplash.com/photo-1542051841857-5f90071e7989?w=600'}
+                  alt={selectedSpot.name[lang] || selectedSpot.name.ja}
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+
+              {/* Google Maps link banner */}
+              <div className="px-6 pt-5">
+                <button
+                  id="btn-trigger-navigation"
+                  onClick={() => handleNavigationRedirect(selectedSpot)}
+                  className="w-full py-3.5 bg-indigo-900 hover:bg-indigo-950 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-lg"
+                >
+                  <Navigation className="w-4.5 h-4.5" />
+                  {(selectedSpot.google_maps_url?.trim() || !/iPad|iPhone|iPod/.test(navigator.userAgent)) ? t('routeGuidance') : t('routeGuidanceApple')}
+                  <ExternalLink className="w-3.5 h-3.5 ml-1.5 opacity-60" />
+                </button>
+              </div>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      
-      {/* 6. NO MATCH STATS FOOTER */}
-      {spots.filter(isSpotMatched).length === 0 && (
+        </motion.div>
+      )}
+
+      {/* NO SPOTS FOOTER */}
+      {spots.length === 0 && (
         <div className="absolute bottom-20 left-4 right-4 bg-white rounded-2xl border border-rose-100 p-4 text-center shadow-lg z-50 animate-fade-in">
           <Info className="w-6 h-6 text-rose-500 mx-auto mb-1" />
           <p className="text-xs text-slate-600">
@@ -647,13 +708,6 @@ export default function GuestView({ onGoToCms }: GuestViewProps) {
           </p>
         </div>
       )}
-
-      {/* FOOTER ACCREDITATION DISPLAY */}
-      <footer className="absolute bottom-1 w-full text-center z-50 pointer-events-none pb-0.5">
-        <span className="text-[8px] font-mono text-slate-400 bg-white/70 backdrop-blur-sm px-2.5 py-0.5 rounded-full border border-slate-100 shadow-sm select-none">
-          {t('aboutApp')}
-        </span>
-      </footer>
 
     </div>
   );

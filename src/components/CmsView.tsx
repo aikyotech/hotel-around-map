@@ -22,26 +22,98 @@ import {
   BookOpen,
   Image as ImageIcon,
   Clock,
-  Briefcase,
   AlertCircle,
   Lock,
   Loader2,
-  ExternalLink
+  ExternalLink,
+  Upload
 } from 'lucide-react';
-import { Spot, SystemStats, TAG_OPTIONS, LANGUAGE_LABELS, LanguageCode } from '../types';
+import { Spot, SystemStats, LANGUAGE_LABELS, LanguageCode, CalendarEvent } from '../types';
 
 interface CmsViewProps {
   onBackToGuest: () => void;
 }
 
-const EXPERT_PRESETS = [
-  { name: 'Sushi 🍣', url: 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=600&auto=format&fit=crop' },
-  { name: 'Ramen noodle 🍜', url: 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=600&auto=format&fit=crop' },
-  { name: 'Matcha Tea Cafe 🍵', url: 'https://images.unsplash.com/photo-1536256263959-770b48d82b0a?w=600&auto=format&fit=crop' },
-  { name: 'Yasaka Shrine ⛩️', url: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=600&auto=format&fit=crop' },
-  { name: 'Gion Alley Lanterns 🏮', url: 'https://images.unsplash.com/photo-1503899036084-c55cdd92da26?w=600&auto=format&fit=crop' },
-  { name: 'Temple Bamboo 🎋', url: 'https://images.unsplash.com/photo-1542051841857-5f90071e7989?w=600&auto=format&fit=crop' },
-];
+interface GeocodeResult {
+  title: string;
+  latitude: number;
+  longitude: number;
+}
+
+// Reused by both the hotel settings form and the spot editor: lets staff type a Japanese
+// address and pick the matched coordinates, instead of guessing/typing lat/lng by hand
+// (the source of the small coordinate drift reported by the user). Uses the free, key-less
+// GSI (国土地理院) address geocoder via /api/geocode.
+function AddressSearchBox({ onSelect }: { onSelect: (lat: number, lng: number) => void }) {
+  const [query, setQuery] = useState<string>('');
+  const [results, setResults] = useState<GeocodeResult[]>([]);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
+
+  const handleSearch = async () => {
+    if (!query.trim()) return;
+    setIsSearching(true);
+    setError('');
+    setResults([]);
+    try {
+      const res = await fetch(`/api/geocode?q=${encodeURIComponent(query.trim())}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '住所検索に失敗しました');
+      if (data.length === 0) setError('該当する住所が見つかりませんでした。');
+      setResults(data);
+    } catch (e: any) {
+      setError(e?.message || '住所検索に失敗しました');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <span className="block text-[10px] font-semibold text-slate-500">住所から検索（日本の住所のみ・国土地理院データ）</span>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          placeholder="例: 愛媛県松山市道後湯之町"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSearch(); } }}
+          className="flex-1 px-3 py-2 rounded-xl text-xs border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white"
+        />
+        <button
+          type="button"
+          onClick={handleSearch}
+          disabled={isSearching}
+          className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white disabled:bg-slate-300 flex items-center gap-1 shrink-0 cursor-pointer"
+        >
+          {isSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+          検索
+        </button>
+      </div>
+      {error && <p className="text-[10px] text-rose-600 font-semibold">{error}</p>}
+      {results.length > 0 && (
+        <div className="space-y-0.5 max-h-32 overflow-y-auto border border-slate-150 rounded-lg divide-y divide-slate-100">
+          {results.map((r, i) => (
+            <button
+              type="button"
+              key={i}
+              onClick={() => {
+                onSelect(r.latitude, r.longitude);
+                setResults([]);
+                setQuery(r.title);
+              }}
+              className="w-full text-left px-3 py-2 text-[11px] hover:bg-slate-50 flex items-center justify-between gap-2 cursor-pointer"
+            >
+              <span className="truncate">{r.title}</span>
+              <span className="text-[9px] text-slate-400 font-mono shrink-0">{r.latitude.toFixed(4)}, {r.longitude.toFixed(4)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 export default function CmsView({ onBackToGuest }: CmsViewProps) {
   // Login Gate
@@ -51,13 +123,14 @@ export default function CmsView({ onBackToGuest }: CmsViewProps) {
 
   // Hotel core settings
   const [hotelConfig, setHotelConfig] = useState({
-    name: '京都祇園グランドホテル',
-    latitude: 35.0037,
-    longitude: 135.7782,
+    name: 'ラ・ロンコントル',
+    latitude: 33.833395132000696,
+    longitude: 132.76678651517162,
   });
 
   // DB datasets
   const [spots, setSpots] = useState<Spot[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [stats, setStats] = useState<SystemStats>({
     pvCount: 0,
     activeSpotCount: 0,
@@ -70,35 +143,53 @@ export default function CmsView({ onBackToGuest }: CmsViewProps) {
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [currentSpot, setCurrentSpot] = useState<Partial<Spot> | null>(null);
   
-  // AI Translation visual states
-  const [isTranslating, setIsTranslating] = useState<boolean>(false);
-  const [translationSuccess, setTranslationSuccess] = useState<boolean>(false);
+  // Spot photo upload state
+  const [isUploadingImage, setIsUploadingImage] = useState<boolean>(false);
+  const [uploadError, setUploadError] = useState<string>('');
 
-  // New AI Auto-Refresh/Quick Assist features
-  const [isRefreshingAround, setIsRefreshingAround] = useState<boolean>(false);
+  // Free auto-pickup of nearby shops/events (no AI API key)
+  const [isRefreshingExternal, setIsRefreshingExternal] = useState<boolean>(false);
 
-  // Around Recommended spots auto-refresh via search grounding
-  const handleAutoRefreshAround = async () => {
-    if (!confirm('現在地ホテル（愛媛松山）の周辺スポットをGoogle Search / Maps の実在データから自動収集し、周辺案内データベースを最新に更新します。既存のスポットは最新のおすすめ情報に置き換えられます。よろしいですか？\n(Gemini 3.5-flash & Google Grounding 搭載)')) return;
-    
-    setIsRefreshingAround(true);
+  // Free auto-pickup of nearby events (Dogo Onsen-area RSS feeds). No AI API key required.
+  const handleExternalRefresh = async () => {
+    setIsRefreshingExternal(true);
     try {
-      const res = await fetch('/api/spots/auto-refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
+      const res = await fetch('/api/spots/external-refresh', { method: 'POST' });
+      const data = await res.json();
       if (res.ok) {
-        const data = await res.json();
-        alert(`松山周辺の最新の人気スポット・名店情報 ${data.count} 件の自動取得と多言語データベース更新に成功しました！`);
+        alert(
+          data.eventError
+            ? 'イベント情報: 現在取得できませんでした（情報元のサイトが一時的に混み合っている可能性があります）。'
+            : `イベント情報: ${data.eventCount} 件をカレンダーに取得しました。`
+        );
         fetchCmsData();
       } else {
-        const err = await res.json();
-        alert(`自動更新に失敗しました: ${err.error || '不明なエラー'}`);
+        alert(`自動取得に失敗しました: ${data.error || '不明なエラー'}`);
       }
     } catch (e) {
-      alert('自動更新中にネットワークエラーが発生しました。');
+      alert('自動取得中にネットワークエラーが発生しました。');
     } finally {
-      setIsRefreshingAround(false);
+      setIsRefreshingExternal(false);
+    }
+  };
+
+  // Upload a local image file for the spot being created/edited
+  const handleImageFileUpload = async (file: File) => {
+    setUploadError('');
+    setIsUploadingImage(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      const res = await fetch('/api/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || '画像のアップロードに失敗しました');
+      }
+      setCurrentSpot(prev => ({ ...prev, image_urls: [data.url] }));
+    } catch (e: any) {
+      setUploadError(e?.message || '画像のアップロードに失敗しました');
+    } finally {
+      setIsUploadingImage(false);
     }
   };
 
@@ -281,6 +372,12 @@ export default function CmsView({ onBackToGuest }: CmsViewProps) {
         const stData = await stRes.json();
         setStats(stData);
       }
+
+      // 4. Fetch auto-collected local event calendar (no map coordinates, see GuestView calendar panel)
+      const evRes = await fetch('/api/events');
+      if (evRes.ok) {
+        setCalendarEvents(await evRes.json());
+      }
     } catch (e) {
       console.error('Failed to load CMS data:', e);
     }
@@ -389,58 +486,6 @@ export default function CmsView({ onBackToGuest }: CmsViewProps) {
     }
   };
 
-  // Trigger Gemini translation with natural translation API
-  const handleTriggerAiTranslation = async () => {
-    const textToTranslate = currentSpot?.description?.ja;
-    if (!textToTranslate || textToTranslate.trim() === '') {
-      alert('自動翻訳を行うには、まず「日本語の紹介文」を入力してください。');
-      return;
-    }
-
-    setIsTranslating(true);
-    setTranslationSuccess(false);
-
-    try {
-      const res = await fetch('/api/translate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToTranslate })
-      });
-
-      if (res.ok) {
-        const translations = await res.json();
-        setCurrentSpot(prev => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            description: {
-              ja: prev.description?.ja || '',
-              en: translations.en || '',
-              zh_cn: translations.zh_cn || '',
-              zh_tw: translations.zh_tw || '',
-              ko: translations.ko || '',
-            },
-            name: {
-              ja: prev.name?.ja || '',
-              en: prev.name?.en || prev.name?.ja || '',
-              zh_cn: prev.name?.zh_cn || prev.name?.ja || '',
-              zh_tw: prev.name?.zh_tw || prev.name?.ja || '',
-              ko: prev.name?.ko || prev.name?.ja || '',
-            }
-          };
-        });
-        setTranslationSuccess(true);
-      } else {
-        alert('翻訳サーバーのエラーが発生しました。');
-      }
-    } catch (e) {
-      console.error(e);
-      alert('AI翻訳処理に失敗しました。');
-    } finally {
-      setIsTranslating(false);
-    }
-  };
-
   // Create or Update spot handler
   const handleSaveSpot = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -463,7 +508,6 @@ export default function CmsView({ onBackToGuest }: CmsViewProps) {
       if (res.ok) {
         setIsEditing(false);
         setCurrentSpot(null);
-        setTranslationSuccess(false);
         fetchCmsData();
       } else {
         alert('保存に失敗しました。入力値を確認してください。');
@@ -486,18 +530,6 @@ export default function CmsView({ onBackToGuest }: CmsViewProps) {
     } catch (e) {
       alert('通信に失敗しました。');
     }
-  };
-
-  // Quick preset coord selector
-  const fillPresetCoordinates = (lat: number, lng: number) => {
-    setCurrentSpot(prev => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        latitude: lat,
-        longitude: lng
-      };
-    });
   };
 
   // Filter list by searchQuery
@@ -526,13 +558,11 @@ export default function CmsView({ onBackToGuest }: CmsViewProps) {
     };
     setCurrentSpot(blankSpot);
     setIsEditing(true);
-    setTranslationSuccess(false);
   };
 
   const handleInitEditSpot = (spot: Spot) => {
     setCurrentSpot({ ...spot });
     setIsEditing(true);
-    setTranslationSuccess(false);
   };
 
   // Guard view with a Login form
@@ -603,16 +633,13 @@ export default function CmsView({ onBackToGuest }: CmsViewProps) {
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-indigo-900 rounded-sm flex items-center justify-center text-white font-serif italic font-bold text-sm shrink-0">G</div>
-            <div className="flex flex-col">
-              <h1 className="text-xs font-extrabold text-slate-800 tracking-tight uppercase leading-none">
-                ホテル周辺 CMS 管理ポータル
-              </h1>
-              <p className="text-[8px] text-slate-400 font-mono tracking-wider font-bold mt-0.5">
-                Kyoto Gion Concierge System Office
-              </p>
-            </div>
+          <div className="flex flex-col">
+            <h1 className="text-xs font-extrabold text-slate-800 tracking-tight uppercase leading-none">
+              ホテル周辺 CMS 管理ポータル
+            </h1>
+            <p className="text-[8px] text-slate-400 font-mono tracking-wider font-bold mt-0.5">
+              La Rencontre Concierge System Office
+            </p>
           </div>
         </div>
 
@@ -638,7 +665,7 @@ export default function CmsView({ onBackToGuest }: CmsViewProps) {
                 現在の稼働状況 (リアルタイム統計)
               </h2>
               
-              <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 text-center">
                   <span className="text-[10px] font-semibold text-slate-400">総 PV 数</span>
                   <div className="text-xl font-bold text-slate-900 mt-1 font-mono tracking-tight">{stats.pvCount}</div>
@@ -647,10 +674,6 @@ export default function CmsView({ onBackToGuest }: CmsViewProps) {
                   <span className="text-[10px] font-semibold text-slate-400">スポット数</span>
                   <div className="text-xl font-bold text-slate-900 mt-1 font-mono tracking-tight">{stats.activeSpotCount}</div>
                 </div>
-                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 text-center">
-                  <span className="text-[10px] font-semibold text-slate-400">イベント数</span>
-                  <div className="text-xl font-bold text-rose-600 mt-1 font-mono tracking-tight">{stats.activeEventCount}</div>
-                </div>
               </div>
 
               <div className="text-[10px] text-slate-400 border-t border-slate-150 pt-3 flex justify-between">
@@ -658,31 +681,63 @@ export default function CmsView({ onBackToGuest }: CmsViewProps) {
                 <span className="font-mono font-medium">{stats.lastUpdated !== '-' ? new Date(stats.lastUpdated).toLocaleString() : '-'}</span>
               </div>
 
-              {/* AUTOMATED MAP GROUNDING REFRESH TRIGGER */}
+              {/* FREE EXTERNAL AUTO-PICKUP: OpenStreetMap + RSS, no AI API key required */}
               <div className="mt-4 pt-3 border-t border-slate-150">
                 <button
-                  id="btn-auto-refresh-around"
+                  id="btn-auto-refresh-external"
                   type="button"
-                  onClick={handleAutoRefreshAround}
-                  disabled={isRefreshingAround}
-                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold py-3 px-4 rounded-xl shadow-lg transition duration-150 flex items-center justify-center cursor-pointer disabled:from-slate-150 disabled:to-slate-200 disabled:text-slate-400"
+                  onClick={handleExternalRefresh}
+                  disabled={isRefreshingExternal}
+                  className="w-full bg-gradient-to-r from-sky-600 to-blue-700 hover:from-sky-700 hover:to-blue-800 text-white text-xs font-bold py-3 px-4 rounded-xl shadow-lg transition duration-150 flex items-center justify-center cursor-pointer disabled:from-slate-150 disabled:to-slate-200 disabled:text-slate-400"
                 >
-                  {isRefreshingAround ? (
+                  {isRefreshingExternal ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin text-white" />
-                      近隣スポット自動取得中...
+                      イベント情報を取得中...
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-4 h-4 mr-2 text-yellow-250 animate-pulse" />
-                      AIが周辺おすすめを自動更新
+                      <Clock className="w-4 h-4 mr-2 text-sky-200" />
+                      周辺イベント情報を自動取得
                     </>
                   )}
                 </button>
                 <p className="text-[9px] text-slate-400 mt-2 text-left leading-relaxed">
-                  ホテルの緯度・経度を中心として、Googleマップ上の実在する人気レストランやおすすめ観光地6選をAI（Gemini 3.5 Flash）が自動探索・多言語で一括更新します。ホテル設定を松山や他の場所へ変えた際もポチッと押すだけで一瞬で最適化されます。
+                  APIキー不要。道後温泉公式エリアガイド・道後温泉コンソーシアム公式サイトの2つのRSSフィードから開催予定のイベント情報を自動取得します（終了済みのイベントは除外）。毎日自動更新（Cron）も設定済みです。
                 </p>
               </div>
+            </div>
+
+            {/* 1B. AUTO-FETCHED EVENT CALENDAR (no reliable venue location, so kept separate from the map) */}
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
+              <h2 className="text-xs font-bold font-mono uppercase text-slate-400 tracking-wider mb-3 flex items-center">
+                <Clock className="w-4 h-4 text-rose-500 mr-1.5" />
+                イベントカレンダー（位置情報なし・自動取得）
+              </h2>
+              {calendarEvents.length === 0 ? (
+                <p className="text-[11px] text-slate-400">まだイベント情報がありません。上の「周辺イベント情報を自動取得」を実行してください。</p>
+              ) : (
+                <ul className="space-y-2 max-h-56 overflow-y-auto">
+                  {calendarEvents.map(ev => (
+                    <li key={ev.id} className="text-[11px] border border-slate-100 rounded-xl px-3 py-2">
+                      <p className="font-bold text-slate-700 leading-snug">{ev.title}</p>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-[10px] text-slate-400">
+                          {ev.publishedAt ? new Date(ev.publishedAt).toLocaleDateString('ja-JP') : '日付不明'}
+                        </span>
+                        {ev.link && (
+                          <a href={ev.link} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline inline-flex items-center text-[10px] font-bold">
+                            詳細 <ExternalLink className="w-2.5 h-2.5 ml-0.5" />
+                          </a>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="text-[9px] text-slate-400 mt-3 leading-relaxed">
+                ※ RSSフィードには会場の正確な位置情報が含まれないため、地図にピン留めせずカレンダー形式でゲスト画面にも表示されます。
+              </p>
             </div>
 
             {/* 2. CORE QR SYSTEM CARD */}
@@ -748,7 +803,7 @@ export default function CmsView({ onBackToGuest }: CmsViewProps) {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[10px] font-semibold text-slate-500 mb-1">経緯緯度 (Latitude)</label>
-                    <input 
+                    <input
                       type="number"
                       step="any"
                       value={hotelConfig.latitude}
@@ -759,7 +814,7 @@ export default function CmsView({ onBackToGuest }: CmsViewProps) {
                   </div>
                   <div>
                     <label className="block text-[10px] font-semibold text-slate-500 mb-1">経度 (Longitude)</label>
-                    <input 
+                    <input
                       type="number"
                       step="any"
                       value={hotelConfig.longitude}
@@ -770,17 +825,19 @@ export default function CmsView({ onBackToGuest }: CmsViewProps) {
                   </div>
                 </div>
 
+                <AddressSearchBox onSelect={(lat, lng) => setHotelConfig(prev => ({ ...prev, latitude: lat, longitude: lng }))} />
+
                 {/* Hotel Location Interactive Map */}
                 <div className="space-y-1">
                   <span className="block text-[10px] font-semibold text-slate-500">地図上で位置調整（ピンをドラッグ、または地図をクリック）</span>
-                  <div 
+                  <div
                     ref={hotelMapRef}
-                    id="hotel-settings-map" 
+                    id="hotel-settings-map"
                     className="w-full h-44 rounded-xl border border-slate-200 shadow-inner overflow-hidden relative z-10"
                   ></div>
                 </div>
 
-                <button 
+                <button
                   id="btn-cms-hotel-save"
                   type="submit"
                   className="w-full bg-slate-100 hover:bg-slate-200 text-slate-150 border border-slate-200 text-slate-700 text-xs font-bold py-2.5 px-3 rounded-xl flex items-center justify-center transition cursor-pointer"
@@ -823,46 +880,6 @@ export default function CmsView({ onBackToGuest }: CmsViewProps) {
 
               {/* Form Input fields */}
               <form onSubmit={handleSaveSpot} className="space-y-6">
-
-                {/* 1. ROW-GROUP: TYPE & SOURCE & STATUS */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-600 mb-1.5">種類 (CategoryType)</label>
-                    <select
-                      value={currentSpot.type}
-                      onChange={(e) => setCurrentSpot({ ...currentSpot, type: e.target.value as any })}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-                    >
-                      <option value="restaurant">飲食店・グルメ</option>
-                      <option value="sightseeing">観光スポット</option>
-                      <option value="event">季節限定イベント</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-600 mb-1.5">データソース (Source)</label>
-                    <select
-                      value={currentSpot.source}
-                      onChange={(e) => setCurrentSpot({ ...currentSpot, source: e.target.value as any })}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-                    >
-                      <option value="hotel_master">ホテル厳選（星ピン表示・★）</option>
-                      <option value="external_api">外部API取得（通常ピン表示）</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-600 mb-1.5">現在の公開ステータス</label>
-                    <select
-                      value={currentSpot.status}
-                      onChange={(e) => setCurrentSpot({ ...currentSpot, status: e.target.value as any })}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-                    >
-                      <option value="active">即時公開 (Active)</option>
-                      <option value="inactive">非公開 (Inactive)</option>
-                    </select>
-                  </div>
-                </div>
 
                 {/* 2. ROW-GROUP: NAME CARD */}
                 <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 space-y-4">
@@ -949,6 +966,8 @@ export default function CmsView({ onBackToGuest }: CmsViewProps) {
                     </div>
                   </div>
 
+                  <AddressSearchBox onSelect={(lat, lng) => setCurrentSpot(prev => prev ? { ...prev, latitude: lat, longitude: lng } : prev)} />
+
                   <div className="pt-2 border-t border-slate-200/60">
                     <label className="block text-[11px] font-semibold text-slate-500 mb-1">Googleマップ URL (任意)</label>
                     <input
@@ -973,141 +992,50 @@ export default function CmsView({ onBackToGuest }: CmsViewProps) {
                     ></div>
                   </div>
 
-                  {/* Preset quick buttons */}
-                  <div>
-                    <span className="block text-[10px] font-semibold text-slate-400 mb-1.5 font-mono">事前登録座標プリセット (1クリック入力)</span>
-                    
-                    <div className="space-y-2">
-                      <div>
-                        <span className="block text-[9px] font-semibold text-slate-400 mb-1">【松山・道後周辺 (愛媛県松山市)】</span>
-                        <div className="flex flex-wrap gap-2">
-                          <button 
-                            type="button" 
-                            onClick={() => fillPresetCoordinates(33.85214, 132.78648)}
-                            className="px-2.5 py-1 text-[10px] font-medium rounded bg-white hover:bg-slate-100 border border-slate-200 cursor-pointer text-slate-600 transition"
-                          >
-                            ♨️ 道後温泉本館周辺 (33.8521, 132.7865)
-                          </button>
-                          <button 
-                            type="button" 
-                            onClick={() => fillPresetCoordinates(33.84562, 132.76541)}
-                            className="px-2.5 py-1 text-[10px] font-medium rounded bg-white hover:bg-slate-100 border border-slate-200 cursor-pointer text-slate-600 transition"
-                          >
-                            🏯 松山城天守閣周辺 (33.8456, 132.7654)
-                          </button>
-                          <button 
-                            type="button" 
-                            onClick={() => fillPresetCoordinates(33.84920, 132.78780)}
-                            className="px-2.5 py-1 text-[10px] font-medium rounded bg-white hover:bg-slate-100 border border-slate-200 cursor-pointer text-slate-600 transition"
-                          >
-                            🌳 道後公園周辺 (33.8492, 132.7878)
-                          </button>
-                        </div>
-                      </div>
-
-                      <div>
-                        <span className="block text-[9px] font-semibold text-slate-400 mb-1">【京都祇園周辺】</span>
-                        <div className="flex flex-wrap gap-2">
-                          <button 
-                            type="button" 
-                            onClick={() => fillPresetCoordinates(35.0041, 135.7768)}
-                            className="px-2.5 py-1 text-[10px] font-medium rounded bg-white hover:bg-slate-100 border border-slate-200 cursor-pointer text-slate-600 transition"
-                          >
-                            📍 祇園きむら近郊 (35.0041, 135.7768)
-                          </button>
-                          <button 
-                            type="button" 
-                            onClick={() => fillPresetCoordinates(35.0025, 135.7791)}
-                            className="px-2.5 py-1 text-[10px] font-medium rounded bg-white hover:bg-slate-100 border border-slate-200 cursor-pointer text-slate-600 transition"
-                          >
-                            📍 祇園たき近郊 (35.0025, 135.7791)
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
                 </div>
 
-                {/* 5. IMAGE URL LIST (WITH KYOTO RICH PRESETS) */}
+                {/* 5. IMAGE UPLOAD */}
                 <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 space-y-4">
                   <h3 className="text-xs font-bold text-slate-700 flex items-center mb-1">
                     <ImageIcon className="w-4 h-4 text-slate-600 mr-1.5" />
-                    スポット外観・フード写真 URL
+                    スポット外観・フード写真
                   </h3>
 
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">写真画像 URL</label>
-                    <input
-                      type="url"
-                      placeholder="https://images.unsplash.com/..."
-                      value={(currentSpot.image_urls && currentSpot.image_urls[0]) || ''}
-                      onChange={(e) => setCurrentSpot({
-                        ...currentSpot,
-                        image_urls: [e.target.value]
-                      })}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 font-mono"
-                    />
-                  </div>
-
-                  {/* Clicking preset images */}
-                  <div>
-                    <span className="block text-[10px] font-semibold text-slate-400 mb-2">【ワンクリック画像入力】京都グルメ・観光スポットお勧め写真素材</span>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
-                      {EXPERT_PRESETS.map((p) => {
-                        const isSelected = currentSpot.image_urls?.[0] === p.url;
-                        return (
-                          <div 
-                            key={p.name}
-                            onClick={() => setCurrentSpot({ ...currentSpot, image_urls: [p.url] })}
-                            className={`cursor-pointer group flex flex-col rounded-lg overflow-hidden border transition bg-white ${
-                              isSelected ? 'border-amber-500 ring-2 ring-amber-400/20' : 'border-slate-200 hover:border-slate-350'
-                            }`}
-                          >
-                            <img src={p.url} className="h-10 w-full object-cover grayscale-1/2 group-hover:grayscale-0 duration-150" alt={p.name} referrerPolicy="no-referrer" />
-                            <span className="text-[8px] font-bold text-slate-600 text-center py-1 truncate">{p.name}</span>
-                          </div>
-                        );
-                      })}
+                  <div className="flex items-start gap-4">
+                    <div className="w-24 h-24 rounded-xl border border-slate-200 bg-white overflow-hidden shrink-0 flex items-center justify-center">
+                      {currentSpot.image_urls && currentSpot.image_urls[0] ? (
+                        <img src={currentSpot.image_urls[0]} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
+                      ) : (
+                        <ImageIcon className="w-6 h-6 text-slate-300" />
+                      )}
                     </div>
-                  </div>
-                </div>
-
-                {/* 6. TAGS CHOOSING CHECKBOXES */}
-                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 space-y-3">
-                  <h3 className="text-xs font-bold text-slate-700 flex items-center">
-                    <Briefcase className="w-4 h-4 text-slate-600 mr-1.5" />
-                    適用フィルタリングタグ
-                  </h3>
-
-                  <div className="flex flex-wrap gap-2.5">
-                    {TAG_OPTIONS.filter(tag => tag !== '#すべて' && tag !== '#スタッフ厳選' && tag !== '#徒歩5分以内' && tag !== '#本日開催イベント').map(tag => {
-                      const tagsArray = currentSpot.tags || [];
-                      const isChecked = tagsArray.includes(tag);
-                      
-                      return (
-                        <button
-                          type="button"
-                          key={tag}
-                          onClick={() => {
-                            let nextTags = [...tagsArray];
-                            if (isChecked) {
-                              nextTags = nextTags.filter(t => t !== tag);
-                            } else {
-                              nextTags.push(tag);
-                            }
-                            setCurrentSpot({ ...currentSpot, tags: nextTags });
-                          }}
-                          className={`px-3 py-1 text-xs rounded-lg border font-semibold flex items-center transition cursor-pointer ${
-                            isChecked 
-                              ? 'bg-slate-900 text-white border-slate-900' 
-                              : 'bg-white text-slate-650 border-slate-250 hover:bg-slate-50'
-                          }`}
-                        >
-                          {isChecked && <Check className="w-3.5 h-3.5 mr-1" />}
-                          {tag.replace('#', '')}
-                        </button>
-                      );
-                    })}
+                    <div className="flex-1 space-y-2">
+                      <label
+                        htmlFor="spot-image-file-input"
+                        className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition ${
+                          isUploadingImage ? 'bg-slate-200 text-slate-400' : 'bg-indigo-900 text-white hover:bg-indigo-950'
+                        }`}
+                      >
+                        {isUploadingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                        {isUploadingImage ? 'アップロード中...' : '画像をアップロード'}
+                      </label>
+                      <input
+                        id="spot-image-file-input"
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        className="hidden"
+                        disabled={isUploadingImage}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleImageFileUpload(file);
+                          e.target.value = '';
+                        }}
+                      />
+                      {uploadError && (
+                        <p className="text-[10px] text-rose-600 font-semibold">{uploadError}</p>
+                      )}
+                      <p className="text-[10px] text-slate-400">JPEG / PNG / WEBP / GIF、15MBまで。</p>
+                    </div>
                   </div>
                 </div>
 

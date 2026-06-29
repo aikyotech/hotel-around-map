@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hotel-around-map",
+  "account_id": "0b9e128ec104392dcd848a36fd9cd590",
+  "main": "./src/worker/index.ts",
+  "compatibility_date": "2024-11-01",
+  "assets": {
+    "directory": "./dist/client",
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hotel-concierge-db",
+      "database_id": "80d59540-c443-41f3-a4d3-d77f15eb4484"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "IMAGES",
+      "id": "af0454ca7a00462bb8a2b9471ee2ce6e"
+    }
+  ],
+  "triggers": {
+    // Daily refresh of the local event calendar (RSS), 09:00 JST = 00:00 UTC
+    "crons": ["0 0 * * *"]
+  }
+}
