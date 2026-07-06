@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "hotel-around-map",
-  "account_id": "0b9e128ec104392dcd848a36fd9cd590",
+  "account_id": "4238c5dcaf2d6d6c18a6a1f47f00be77",
   "main": "./src/worker/index.ts",
   "compatibility_date": "2024-11-01",
   "assets": {
@@ -12,13 +12,13 @@
     {
       "binding": "DB",
       "database_name": "hotel-concierge-db",
-      "database_id": "80d59540-c443-41f3-a4d3-d77f15eb4484"
+      "database_id": "ef380243-1f96-4242-a4c2-07cf4610037f"
     }
   ],
   "kv_namespaces": [
     {
       "binding": "IMAGES",
-      "id": "af0454ca7a00462bb8a2b9471ee2ce6e"
+      "id": "eb3074eb663f46e29054bc290fffa8cf"
     }
   ],
   "triggers": {
