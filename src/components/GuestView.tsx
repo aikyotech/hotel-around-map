@@ -87,13 +87,15 @@ export default function GuestView() {
   const sheetY = useMotionValue(0);
   const dragControls = useDragControls();
   const calendarDragControls = useDragControls();
+  // Both bottom sheets use touch-action:none everywhere so a touch anywhere drags the
+  // sheet exactly like the handle bar (real devices won't honor touch-action changes
+  // mid-gesture, so native scrolling can't be mixed in). Long content stays reachable
+  // because upward drag beyond the fully-open position is routed into scrollTop here.
   const sheetContentRef = useRef<HTMLDivElement>(null);
-  // When a drag starts on scrolled content, we defer to native scroll instead of
-  // grabbing the sheet. This remembers where that touch began so a later pointermove
-  // can hand control back to the sheet once the content has scrolled to its top and
-  // the finger keeps moving downward (otherwise, once content.scrollTop > 0, the
-  // sheet becomes permanently un-draggable from anywhere except the tiny handle).
-  const pendingContentDragRef = useRef<number | null>(null);
+  const calendarContentRef = useRef<HTMLDivElement>(null);
+  // Calendar panel's y is animated with percent keyframes, so its live pixel offset is
+  // mirrored into this ref (via onUpdate) for the scroll-routing check.
+  const calendarYRef = useRef(0);
 
   useEffect(() => {
     if (selectedSpot) {
@@ -439,7 +441,7 @@ export default function GuestView() {
             className="fixed inset-0 z-[1199]"
             onClick={() => setIsLangMenuOpen(false)}
           />
-          <div className="fixed top-[60px] right-14 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden z-[1200] min-w-[120px]">
+          <div className="fixed top-[60px] right-5 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden z-[1200] min-w-[120px]">
             {(Object.keys(LANGUAGE_LABELS) as LanguageCode[]).map(code => (
               <button
                 key={code}
@@ -483,20 +485,35 @@ export default function GuestView() {
               dragControls={calendarDragControls}
               dragListener={false}
               dragConstraints={{ top: 0 }}
-              dragElastic={{ top: 0.1, bottom: 0.5 }}
+              dragElastic={{ top: 0, bottom: 0.5 }}
+              onUpdate={(latest) => {
+                calendarYRef.current = parseFloat(String(latest.y)) || 0;
+              }}
+              onDrag={(_, info) => {
+                // Same as the spot detail sheet: when pinned fully open, route further
+                // upward drag into the event list's scroll.
+                const content = calendarContentRef.current;
+                if (content && info.delta.y < 0 && calendarYRef.current <= 0) {
+                  content.scrollTop -= info.delta.y;
+                }
+              }}
               onDragEnd={(_, info) => {
                 if (info.offset.y > 120 || info.velocity.y > 500) {
                   setIsCalendarOpen(false);
                 }
               }}
-              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl z-[1300] overflow-hidden flex flex-col"
+              onPointerDownCapture={(e) => {
+                // Drag from anywhere on the panel, exactly like the handle bar — taps on
+                // real controls (buttons/links) still work normally.
+                const target = e.target as HTMLElement;
+                if (target.closest('button, a, input, textarea, select')) return;
+                calendarDragControls.start(e);
+              }}
+              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl z-[1300] overflow-hidden flex flex-col touch-none"
               style={{ maxHeight: '75dvh' }}
             >
               {/* Sheet handle: same drag-to-dismiss + close button affordance as the spot detail sheet */}
-              <div
-                className="relative h-10 w-full flex items-center justify-center shrink-0 cursor-grab active:cursor-grabbing touch-none"
-                onPointerDown={(e) => calendarDragControls.start(e)}
-              >
+              <div className="relative h-10 w-full flex items-center justify-center shrink-0 cursor-grab active:cursor-grabbing touch-none">
                 <div className="w-12 h-1.5 bg-slate-300 rounded-full"></div>
                 <button
                   id="btn-calendar-close"
@@ -515,7 +532,7 @@ export default function GuestView() {
                 <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">{t('eventCalendarSubtitle')}</p>
               </div>
 
-              <div className="flex-1 overflow-y-auto overscroll-contain p-5 space-y-3">
+              <div ref={calendarContentRef} className="flex-1 overflow-y-auto overscroll-contain p-5 space-y-3 touch-none">
                 {calendarEvents.length === 0 ? (
                   <p className="text-xs text-slate-400 text-center py-8">{t('eventCalendarEmpty')}</p>
                 ) : (
@@ -622,7 +639,16 @@ export default function GuestView() {
           dragControls={dragControls}
           dragListener={false}
           dragConstraints={{ top: 0 }}
-          dragElastic={{ top: 0.1, bottom: 0 }}
+          dragElastic={{ top: 0, bottom: 0 }}
+          onDrag={(_, info) => {
+            // Once the sheet is pinned fully open, keep following an upward drag by
+            // scrolling the content instead, so long descriptions stay reachable even
+            // though the whole sheet is touch-action:none.
+            const content = sheetContentRef.current;
+            if (content && info.delta.y < 0 && sheetY.get() <= 0) {
+              content.scrollTop -= info.delta.y;
+            }
+          }}
           onDragEnd={(_, info) => {
             const currentY = sheetY.get();
             const halfPx = window.innerHeight * 0.46;
@@ -631,34 +657,13 @@ export default function GuestView() {
             }
           }}
           onPointerDownCapture={(e) => {
-            // Let taps on real controls (buttons/links) work normally, and don't hijack
-            // an in-progress scroll of the content area — only take over the sheet drag
-            // when the pointer starts on the content while it's already scrolled to top.
+            // Drag from anywhere on the sheet, exactly like the handle bar — taps on
+            // real controls (buttons/links) still work normally.
             const target = e.target as HTMLElement;
             if (target.closest('button, a, input, textarea, select')) return;
-            const content = sheetContentRef.current;
-            if (content && content.contains(target) && content.scrollTop > 0) {
-              pendingContentDragRef.current = e.clientY;
-              return;
-            }
-            pendingContentDragRef.current = null;
             dragControls.start(e);
           }}
-          onPointerMove={(e) => {
-            // A touch that began on scrolled content: once the content has been
-            // scrolled back to its top and the finger keeps pulling downward, hand
-            // control over to the sheet so it can keep being dragged instead of
-            // going dead once content.scrollTop can no longer decrease.
-            if (pendingContentDragRef.current === null) return;
-            const content = sheetContentRef.current;
-            if (content && content.scrollTop <= 0 && e.clientY > pendingContentDragRef.current) {
-              pendingContentDragRef.current = null;
-              dragControls.start(e);
-            }
-          }}
-          onPointerUp={() => { pendingContentDragRef.current = null; }}
-          onPointerCancel={() => { pendingContentDragRef.current = null; }}
-          className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl border-t border-slate-100 shadow-2xl z-[1001] overflow-hidden flex flex-col"
+          className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl border-t border-slate-100 shadow-2xl z-[1001] overflow-hidden flex flex-col touch-none"
         >
           {/* Sheet Handle */}
           <div className="relative h-10 w-full flex items-center justify-center shrink-0 cursor-grab active:cursor-grabbing touch-none">
@@ -672,9 +677,10 @@ export default function GuestView() {
             </button>
           </div>
 
-            {/* Main Content Area (scrollable; overscroll-contain stops the scroll bounce from
-                revealing the dark page background behind the sheet) */}
-            <div ref={sheetContentRef} className="flex-1 overflow-y-auto overscroll-contain pb-8">
+            {/* Main Content Area: touch-none so touches always drag the sheet; scrolling
+                happens programmatically via the onDrag routing above (wheel still works
+                on desktop through overflow-y-auto). */}
+            <div ref={sheetContentRef} className="flex-1 overflow-y-auto overscroll-contain pb-8 touch-none">
               <div className="px-6 pt-2">
                 {/* Badges */}
                 <div className="flex gap-1.5 mb-2">
