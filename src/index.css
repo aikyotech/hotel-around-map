@@ -11,13 +11,6 @@
   font-family: 'Inter', sans-serif !important;
 }
 
-/* Push the zoom +/- control below the fixed top header (h-14 = 56px) on the full-screen
-   guest map so it isn't hidden underneath it. Scoped to this map only (not the small
-   embedded maps in the CMS) since those don't have an overlapping fixed header. */
-#leaflet-base-map .leaflet-top.leaflet-right {
-  margin-top: 66px;
-}
-
 /* Pulsing GPS animations */
 @keyframes marker-pulse {
   0% {

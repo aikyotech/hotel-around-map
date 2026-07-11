@@ -183,9 +183,6 @@ export default function GuestView() {
       attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
     }).addTo(map);
 
-    // Add zoom control at bottom-right or top-left safely
-    L.control.zoom({ position: 'topright' }).addTo(map);
-
     // Initial load hotel marker
     const hotelHtml = `
       <div class="relative flex items-center justify-center w-11 h-11 bg-indigo-900 rounded-full border-[3px] border-white shadow-xl scale-105 duration-200 animate-pulse">
