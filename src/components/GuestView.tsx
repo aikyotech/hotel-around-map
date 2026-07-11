@@ -692,9 +692,23 @@ export default function GuestView() {
                 )}
               </div>
 
+              {/* Google Maps link banner */}
+              <div className="px-6 pt-5">
+                <button
+                  id="btn-trigger-navigation"
+                  onClick={() => handleNavigationRedirect(selectedSpot)}
+                  className="w-full py-3.5 bg-indigo-900 hover:bg-indigo-950 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-lg"
+                >
+                  <Navigation className="w-4.5 h-4.5" />
+                  {(selectedSpot.google_maps_url?.trim() || !/iPad|iPhone|iPod/.test(navigator.userAgent)) ? t('routeGuidance') : t('routeGuidanceApple')}
+                  <ExternalLink className="w-3.5 h-3.5 ml-1.5 opacity-60" />
+                </button>
+              </div>
+
               {/* Cover Photo: only rendered when staff actually uploaded one. No stock-photo
                   fallback, so an untouched spot honestly shows "no photo" instead of a
-                  photo nobody chose. */}
+                  photo nobody chose. Placed last so the text info (name/description/route
+                  button) is reachable without scrolling past a large image first. */}
               <div className="relative h-44 md:h-52 bg-slate-100 w-full overflow-hidden mt-5">
                 {selectedSpot.image_urls && selectedSpot.image_urls[0] ? (
                   <img
@@ -709,19 +723,6 @@ export default function GuestView() {
                     <span className="text-[10px] font-semibold">No Photo</span>
                   </div>
                 )}
-              </div>
-
-              {/* Google Maps link banner */}
-              <div className="px-6 pt-5">
-                <button
-                  id="btn-trigger-navigation"
-                  onClick={() => handleNavigationRedirect(selectedSpot)}
-                  className="w-full py-3.5 bg-indigo-900 hover:bg-indigo-950 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-lg"
-                >
-                  <Navigation className="w-4.5 h-4.5" />
-                  {(selectedSpot.google_maps_url?.trim() || !/iPad|iPhone|iPod/.test(navigator.userAgent)) ? t('routeGuidance') : t('routeGuidanceApple')}
-                  <ExternalLink className="w-3.5 h-3.5 ml-1.5 opacity-60" />
-                </button>
               </div>
             </div>
         </motion.div>
