@@ -88,6 +88,12 @@ export default function GuestView() {
   const dragControls = useDragControls();
   const calendarDragControls = useDragControls();
   const sheetContentRef = useRef<HTMLDivElement>(null);
+  // When a drag starts on scrolled content, we defer to native scroll instead of
+  // grabbing the sheet. This remembers where that touch began so a later pointermove
+  // can hand control back to the sheet once the content has scrolled to its top and
+  // the finger keeps moving downward (otherwise, once content.scrollTop > 0, the
+  // sheet becomes permanently un-draggable from anywhere except the tiny handle).
+  const pendingContentDragRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (selectedSpot) {
@@ -631,9 +637,27 @@ export default function GuestView() {
             const target = e.target as HTMLElement;
             if (target.closest('button, a, input, textarea, select')) return;
             const content = sheetContentRef.current;
-            if (content && content.contains(target) && content.scrollTop > 0) return;
+            if (content && content.contains(target) && content.scrollTop > 0) {
+              pendingContentDragRef.current = e.clientY;
+              return;
+            }
+            pendingContentDragRef.current = null;
             dragControls.start(e);
           }}
+          onPointerMove={(e) => {
+            // A touch that began on scrolled content: once the content has been
+            // scrolled back to its top and the finger keeps pulling downward, hand
+            // control over to the sheet so it can keep being dragged instead of
+            // going dead once content.scrollTop can no longer decrease.
+            if (pendingContentDragRef.current === null) return;
+            const content = sheetContentRef.current;
+            if (content && content.scrollTop <= 0 && e.clientY > pendingContentDragRef.current) {
+              pendingContentDragRef.current = null;
+              dragControls.start(e);
+            }
+          }}
+          onPointerUp={() => { pendingContentDragRef.current = null; }}
+          onPointerCancel={() => { pendingContentDragRef.current = null; }}
           className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl border-t border-slate-100 shadow-2xl z-[1001] overflow-hidden flex flex-col"
         >
           {/* Sheet Handle */}
