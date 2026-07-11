@@ -51,6 +51,12 @@ interface Coords {
 
 const LANG_STORAGE_KEY = 'concierge_lang';
 
+// Fixed header (h-14 = 56px) + category filter bar height, both pinned above the spot
+// detail sheet in z-index. The sheet's max-open height is capped to this so it can never
+// be dragged up underneath them, which would hide its drag handle/close button and leave
+// it stuck open.
+const HEADER_AND_FILTER_BAR_HEIGHT_PX = 110;
+
 export default function GuestView() {
   const [lang, setLang] = useState<LanguageCode>(() => {
     try {
@@ -600,11 +606,14 @@ export default function GuestView() {
         </button>
       </div>
 
-      {/* 5. DRAGGABLE BOTTOM SHEET: opens at 50%, drag handle freely, auto-close below 50% */}
+      {/* 5. DRAGGABLE BOTTOM SHEET: opens at 50%, drag handle freely, auto-close below 50%.
+          Height is capped to leave room for the fixed header + filter bar (both z-indexed
+          above this sheet) so the drag handle/close button can never be dragged up underneath
+          them and become unreachable. */}
       {sheetVisible && selectedSpot && (
         <motion.div
           id="spot-detail-bottom-sheet"
-          style={{ y: sheetY, height: '92dvh' }}
+          style={{ y: sheetY, height: `calc(100dvh - ${HEADER_AND_FILTER_BAR_HEIGHT_PX}px)` }}
           drag="y"
           dragControls={dragControls}
           dragListener={false}
