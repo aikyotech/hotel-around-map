@@ -93,9 +93,10 @@ export default function GuestView() {
   // because upward drag beyond the fully-open position is routed into scrollTop here.
   const sheetContentRef = useRef<HTMLDivElement>(null);
   const calendarContentRef = useRef<HTMLDivElement>(null);
-  // Calendar panel's y is animated with percent keyframes, so its live pixel offset is
-  // mirrored into this ref (via onUpdate) for the scroll-routing check.
-  const calendarYRef = useRef(0);
+  // The calendar panel's y is held in a motion value so the drag handler can pin the
+  // panel in place while a downward drag is still being consumed by the event list's
+  // scroll (percent strings from the open/close animation parse to 0 when fully open).
+  const calendarY = useMotionValue<number | string>(0);
 
   useEffect(() => {
     if (selectedSpot) {
@@ -391,12 +392,10 @@ export default function GuestView() {
       return;
     }
 
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-    const url = isIOS 
-      ? `maps://?q=${spot.latitude},${spot.longitude}` 
-      : `https://www.google.com/maps/search/?api=1&query=${spot.latitude},${spot.longitude}`;
-    
-    window.open(url, '_blank');
+    // Always Google Maps, on every platform: on iPhone this opens the Google Maps app
+    // if installed, or Google Maps in the browser otherwise (never Apple Maps).
+    const url = `https://www.google.com/maps/search/?api=1&query=${spot.latitude},${spot.longitude}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -486,19 +485,27 @@ export default function GuestView() {
               dragListener={false}
               dragConstraints={{ top: 0 }}
               dragElastic={{ top: 0, bottom: 0.5 }}
-              onUpdate={(latest) => {
-                calendarYRef.current = parseFloat(String(latest.y)) || 0;
-              }}
               onDrag={(_, info) => {
-                // Same as the spot detail sheet: when pinned fully open, route further
-                // upward drag into the event list's scroll.
                 const content = calendarContentRef.current;
-                if (content && info.delta.y < 0 && calendarYRef.current <= 0) {
-                  content.scrollTop -= info.delta.y;
+                if (!content) return;
+                const dy = info.delta.y;
+                const yPx = parseFloat(String(calendarY.get())) || 0;
+                if (dy < 0 && yPx <= 0) {
+                  // Pinned fully open: route further upward drag into the list's scroll.
+                  content.scrollTop -= dy;
+                } else if (dy > 0 && content.scrollTop > 0) {
+                  // Downward drag while the list is scrolled: unscroll the list first,
+                  // keeping the panel pinned. Once scrollTop hits 0 the very same gesture
+                  // seamlessly starts moving the panel down to dismiss it.
+                  content.scrollTop = Math.max(0, content.scrollTop - dy);
+                  calendarY.set(0);
                 }
               }}
               onDragEnd={(_, info) => {
-                if (info.offset.y > 120 || info.velocity.y > 500) {
+                // Judge by how far the panel itself actually moved (info.offset.y also
+                // counts drag distance that was consumed by the list's scroll above).
+                const yPx = parseFloat(String(calendarY.get())) || 0;
+                if (yPx > 120 || (yPx > 0 && info.velocity.y > 500)) {
                   setIsCalendarOpen(false);
                 }
               }}
@@ -510,7 +517,7 @@ export default function GuestView() {
                 calendarDragControls.start(e);
               }}
               className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl z-[1300] overflow-hidden flex flex-col touch-none"
-              style={{ maxHeight: '75dvh' }}
+              style={{ maxHeight: '75dvh', y: calendarY }}
             >
               {/* Sheet handle: same drag-to-dismiss + close button affordance as the spot detail sheet */}
               <div className="relative h-10 w-full flex items-center justify-center shrink-0 cursor-grab active:cursor-grabbing touch-none">
@@ -735,7 +742,7 @@ export default function GuestView() {
                   className="w-full py-3.5 bg-indigo-900 hover:bg-indigo-950 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-lg"
                 >
                   <Navigation className="w-4.5 h-4.5" />
-                  {(selectedSpot.google_maps_url?.trim() || !/iPad|iPhone|iPod/.test(navigator.userAgent)) ? t('routeGuidance') : t('routeGuidanceApple')}
+                  {t('routeGuidance')}
                   <ExternalLink className="w-3.5 h-3.5 ml-1.5 opacity-60" />
                 </button>
               </div>
