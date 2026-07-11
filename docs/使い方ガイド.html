@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ホテル周辺デジタルコンシェルジュ 使い方ガイド</title>
+<style>
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+    color: #1e293b;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+    line-height: 1.8;
+    background: #ffffff;
+  }
+  h1 {
+    font-size: 26px;
+    border-bottom: 4px solid #4338ca;
+    padding-bottom: 12px;
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    color: #64748b;
+    font-size: 13px;
+    margin-bottom: 40px;
+  }
+  h2 {
+    font-size: 19px;
+    margin-top: 48px;
+    padding: 10px 16px;
+    background: #eef2ff;
+    color: #3730a3;
+    border-left: 6px solid #4338ca;
+    border-radius: 4px;
+  }
+  h3 {
+    font-size: 15px;
+    margin-top: 28px;
+    color: #1e293b;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 6px;
+  }
+  .step {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 14px 0;
+  }
+  .step-num {
+    display: inline-block;
+    background: #4338ca;
+    color: white;
+    font-weight: bold;
+    width: 24px;
+    height: 24px;
+    line-height: 24px;
+    text-align: center;
+    border-radius: 50%;
+    font-size: 12px;
+    margin-right: 8px;
+  }
+  .box {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-left: 5px solid #f59e0b;
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin: 16px 0;
+    font-size: 13.5px;
+  }
+  .box.danger {
+    background: #fef2f2;
+    border-color: #fecaca;
+    border-left-color: #dc2626;
+  }
+  .box.info {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    border-left-color: #2563eb;
+  }
+  code, .code {
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: "SF Mono", Consolas, monospace;
+    font-size: 13px;
+    color: #be123c;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 13.5px;
+  }
+  th, td {
+    border: 1px solid #e2e8f0;
+    padding: 8px 12px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: #f8fafc;
+    font-weight: bold;
+    color: #475569;
+  }
+  ul, ol {
+    padding-left: 22px;
+  }
+  li {
+    margin: 4px 0;
+  }
+  .toc {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 20px 24px;
+  }
+  .toc a {
+    color: #3730a3;
+    text-decoration: none;
+  }
+  .toc a:hover {
+    text-decoration: underline;
+  }
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: bold;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-left: 6px;
+  }
+  .badge.guest { background: #dcfce7; color: #166534; }
+  .badge.staff { background: #fee2e2; color: #991b1b; }
+  .footer {
+    margin-top: 60px;
+    padding-top: 20px;
+    border-top: 1px solid #e2e8f0;
+    color: #94a3b8;
+    font-size: 12px;
+    text-align: center;
+  }
+  .page-break {
+    page-break-before: always;
+  }
+</style>
+</head>
+<body>
+
+<h1>ホテル周辺デジタルコンシェルジュ 使い方ガイド</h1>
+<p class="subtitle">ゲスト向け地図アプリ ＋ スタッフ用管理画面（CMS）の操作説明書</p>
+
+<div class="toc">
+  <strong>目次</strong>
+  <ol>
+    <li><a href="#overview">このアプリについて</a></li>
+    <li><a href="#guest">ゲスト画面の使い方</a> <span class="badge guest">お客様向け</span></li>
+    <li><a href="#staff">管理画面（CMS）の使い方</a> <span class="badge staff">スタッフ向け</span></li>
+    <li><a href="#spot">スポットの登録・編集</a> <span class="badge staff">スタッフ向け</span></li>
+    <li><a href="#category">スポットの種類（カテゴリ）管理</a> <span class="badge staff">スタッフ向け</span></li>
+    <li><a href="#qr">客室掲示用QRコードの作り方</a> <span class="badge staff">スタッフ向け</span></li>
+    <li><a href="#faq">よくある質問</a></li>
+  </ol>
+</div>
+
+<h2 id="overview">1. このアプリについて</h2>
+<p>
+  「ホテル周辺デジタルコンシェルジュ」は、宿泊されたお客様がスマートフォンで<strong>ログイン不要・アプリインストール不要</strong>のまま、ホテル周辺のおすすめスポット（グルメ・観光・イベントなど）を地図上で確認できるWebアプリです。
+</p>
+<p>
+  お客様が使う<strong>ゲスト画面</strong>と、スタッフがスポット情報を登録・編集する<strong>管理画面（CMS）</strong>の2つの画面があります。
+</p>
+
+<div class="box info">
+  <strong>2つの画面のURLの違い</strong><br>
+  ・ゲスト画面：<code>https://hotel-around-map.aikyo-tech.workers.dev/</code>（QRコードで開く通常の画面）<br>
+  ・管理画面　：<code>https://hotel-around-map.aikyo-tech.workers.dev/?view=cms</code>（末尾に <code>?view=cms</code> を付けたURL）<br><br>
+  お客様が誤って管理画面に迷い込まないよう、ゲスト画面には管理画面への案内ボタンをあえて設置していません。スタッフの方は上記の管理画面用URLをブラウザのブックマークに登録しておくことをおすすめします。
+</div>
+
+<h2 id="guest">2. ゲスト画面の使い方 <span class="badge guest">お客様向け</span></h2>
+
+<h3>基本の見方</h3>
+<div class="step"><span class="step-num">1</span>QRコードを読み取ると地図画面が開きます。ログインやアプリのインストールは不要です。</div>
+<div class="step"><span class="step-num">2</span>地図上の丸いピンをタップすると、そのスポットの詳細（写真・紹介文・タグ）が画面下からせり上がって表示されます。</div>
+<div class="step"><span class="step-num">3</span>詳細画面は上に引っ張って全画面表示に、下に引っ張るかつまみ横の丸いボタンで閉じられます。</div>
+<div class="step"><span class="step-num">4</span>詳細画面の「Googleマップでルート案内」ボタンを押すと、外部の地図アプリでそのままナビを開始できます（iPhoneでは「iOSマップでルート案内」になります）。</div>
+
+<h3>画面上部のボタン</h3>
+<table>
+  <tr><th>ボタン</th><th>できること</th></tr>
+  <tr><td>🌐 言語切り替え</td><td>日本語・英語・簡体字・繁体字・韓国語の5言語に切り替えられます。</td></tr>
+  <tr><td>🕒 周辺イベント情報</td><td>道後温泉エリアの最新の祭り・イベント情報を一覧（カレンダー形式）で表示します。会場の正確な位置情報がない催しはピンではなくこの一覧に表示されます。</td></tr>
+  <tr><td>🧭 現在地表示／GPS連動</td><td>お客様の現在地を地図上に表示します。もう一度押すとGPSに追従して地図が動く「GPS連動中」になります。</td></tr>
+</table>
+
+<h3>絞り込み（カテゴリフィルター）</h3>
+<p>
+  ヘッダーのすぐ下に表示される丸いボタン（すべて／グルメ／観光スポット など）をタップすると、そのカテゴリのピンだけが地図に表示されます。カテゴリの種類・色・絵文字はスタッフが管理画面から自由に追加できます。
+</p>
+
+<h2 id="staff" class="page-break">3. 管理画面（CMS）の使い方 <span class="badge staff">スタッフ向け</span></h2>
+
+<h3>ログイン</h3>
+<div class="step"><span class="step-num">1</span>ブラウザで <code>https://hotel-around-map.aikyo-tech.workers.dev/?view=cms</code> を開きます。</div>
+<div class="step"><span class="step-num">2</span>パスワード入力画面が表示されるので、管理者から共有されたパスワードを入力してログインします。</div>
+
+<div class="box danger">
+  <strong>パスワードの取り扱いについて</strong><br>
+  ・パスワードは誰にでも共有しないでください。スタッフ内で口頭・社内チャットなど、URLと違う経路で伝えるようにしてください。<br>
+  ・同じ端末から短時間に何度もパスワードを間違えると、しばらくログインができなくなる仕組み（不正アクセス防止のロック）が入っています。心当たりがないのにロックされた場合は、しばらく（15分程度）待ってから再度お試しください。
+</div>
+
+<h3>管理画面でできること（ダッシュボード）</h3>
+<table>
+  <tr><th>カード</th><th>できること</th></tr>
+  <tr><td>現在の稼働状況</td><td>総アクセス数・登録スポット数・最終更新日時を確認できます。</td></tr>
+  <tr><td>周辺イベント情報を自動取得</td><td>道後温泉エリアの公式サイトのイベント情報を自動で取り込みます（APIキー不要）。毎日自動でも更新されますが、このボタンで手動更新もできます。</td></tr>
+  <tr><td>イベントカレンダー</td><td>自動取得したイベントの一覧を確認できます（位置情報がないため地図には表示されません）。</td></tr>
+  <tr><td>スポットの種類（カテゴリ）管理</td><td><a href="#category">4章</a>を参照。</td></tr>
+  <tr><td>客室掲示用QRコード生成</td><td><a href="#qr">6章</a>を参照。</td></tr>
+  <tr><td>ホテルの基本位置情報</td><td>地図の中心となるホテルの名称・緯度経度を設定します。通常は変更不要です。</td></tr>
+  <tr><td>登録済みスポット一覧</td><td><a href="#spot">5章</a>を参照。「ゲスト画面 (デモ)」ボタンで実際の見え方を確認できます。</td></tr>
+</table>
+
+<h2 id="spot" class="page-break">4. スポットの登録・編集 <span class="badge staff">スタッフ向け</span></h2>
+
+<div class="step"><span class="step-num">1</span>スポット一覧の「＋新規追加」ボタン、または既存スポットの「編集」ボタンを押します。</div>
+<div class="step"><span class="step-num">2</span><strong>種類（カテゴリ）</strong>を選びます。カテゴリが1つもない場合は、先に <a href="#category">カテゴリ管理</a> で追加してください。</div>
+<div class="step"><span class="step-num">3</span><strong>名称・紹介説明文（日本語は必須）</strong>を入力します。</div>
+<div class="step"><span class="step-num">4</span><strong>位置座標</strong>を設定します。住所検索ボックスに住所を入力するか、地図上のピンをドラッグ、または地図をクリックして位置を調整できます。緯度・経度を直接入力することも可能です。</div>
+<div class="step"><span class="step-num">5</span>（任意）Googleマップの店舗URLを貼り付けると、ゲスト画面に「Googleマップで開く」ボタンが表示されます。</div>
+<div class="step"><span class="step-num">6</span>（任意）スポットの写真をアップロードします（JPEG/PNG/WEBP/GIF、15MBまで）。</div>
+<div class="step"><span class="step-num">7</span>「イベント」カテゴリを選んだ場合のみ、開始日・終了日を設定できます。</div>
+<div class="step"><span class="step-num">8</span>「スポット情報を保存・一括公開する」を押すと、即座にゲスト画面に反映されます。</div>
+
+<div class="box">
+  スポットの並び順や検索結果には影響しませんが、「無効（非公開）」ステータスにしたスポットは一時的にゲスト画面から非表示にできます（削除せずに一覧からいったん隠したい場合に便利です）。
+</div>
+
+<h2 id="category">5. スポットの種類（カテゴリ）管理 <span class="badge staff">スタッフ向け</span></h2>
+<p>
+  「グルメ」「観光スポット」「イベント」といったスポットの種類は固定ではなく、スタッフが自由に追加・編集・削除できます。ここで設定した<strong>色と絵文字</strong>は、ゲスト画面の地図ピンと絞り込みボタンの両方にそのまま使われるので、色を変えれば両方に反映されます。
+</p>
+<table>
+  <tr><th>操作</th><th>方法</th></tr>
+  <tr><td>追加</td><td>カテゴリ名を入力し、色と絵文字を選んで追加します。</td></tr>
+  <tr><td>編集</td><td>カテゴリの鉛筆アイコンから名称・色・絵文字を変更できます。</td></tr>
+  <tr><td>削除</td><td>ゴミ箱アイコンで削除できます。ただし、<strong>そのカテゴリを使っているスポットが1件でもあると削除できません</strong>（先にスポット側の種類を変更してください）。</td></tr>
+</table>
+
+<h2 id="qr">6. 客室掲示用QRコードの作り方 <span class="badge staff">スタッフ向け</span></h2>
+<div class="step"><span class="step-num">1</span>ダッシュボードの「客室掲示用 QRコード生成」カードに、常にゲスト画面に直結するQRコードが自動生成されています。</div>
+<div class="step"><span class="step-num">2</span>「QRコード画像をダウンロード」ボタンで保存できます。うまく保存できない場合は、QRコード画像を右クリック（スマートフォンは長押し）して「画像を保存」を選んでください。</div>
+<div class="step"><span class="step-num">3</span>印刷して客室のポップアップやフロントに設置すれば、お客様はスマートフォンのカメラで読み取るだけでゲスト画面を開けます。</div>
+
+<h2 id="faq" class="page-break">7. よくある質問</h2>
+
+<h3>Q. 地図にピンが表示されない／古い情報のままです</h3>
+<p>A. スポットの「ステータス」が「無効」になっていないか確認してください。それでも直らない場合は、ブラウザの再読み込み（リロード）をお試しください。</p>
+
+<h3>Q. カテゴリを削除しようとするとエラーが出ます</h3>
+<p>A. そのカテゴリを使用しているスポットが残っています。先にスポット一覧で該当スポットの「種類」を別のカテゴリに変更してから、再度削除してください。</p>
+
+<h3>Q. パスワードを何度も間違えたらログインできなくなりました</h3>
+<p>A. 不正アクセス防止のため、同一端末から短時間に何度も認証に失敗すると一時的にロックされる仕組みです。15分ほど待ってから再度お試しください。</p>
+
+<h3>Q. イベント情報の日付がおかしい・全部同じ日付になっている</h3>
+<p>A. ダッシュボードの「周辺イベント情報を自動取得」ボタンを押して最新の情報に更新してください。それでも解消しない場合は開発担当までご連絡ください。</p>
+
+<h3>Q. 管理画面のURLを忘れてしまいました</h3>
+<p>A. ゲスト画面のURLの末尾に <code>?view=cms</code> を付け足してアクセスしてください（例：<code>https://hotel-around-map.aikyo-tech.workers.dev/?view=cms</code>）。</p>
+
+<div class="footer">
+  ホテル周辺デジタルコンシェルジュ 使い方ガイド　2026年7月版（初版）
+</div>
+
+</body>
+</html>
