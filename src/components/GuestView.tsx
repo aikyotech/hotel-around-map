@@ -87,6 +87,7 @@ export default function GuestView() {
   const sheetY = useMotionValue(0);
   const dragControls = useDragControls();
   const calendarDragControls = useDragControls();
+  const sheetContentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (selectedSpot) {
@@ -623,13 +624,20 @@ export default function GuestView() {
               closeSheet();
             }
           }}
+          onPointerDownCapture={(e) => {
+            // Let taps on real controls (buttons/links) work normally, and don't hijack
+            // an in-progress scroll of the content area — only take over the sheet drag
+            // when the pointer starts on the content while it's already scrolled to top.
+            const target = e.target as HTMLElement;
+            if (target.closest('button, a, input, textarea, select')) return;
+            const content = sheetContentRef.current;
+            if (content && content.contains(target) && content.scrollTop > 0) return;
+            dragControls.start(e);
+          }}
           className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl border-t border-slate-100 shadow-2xl z-[1001] overflow-hidden flex flex-col"
         >
           {/* Sheet Handle */}
-          <div
-            className="relative h-10 w-full flex items-center justify-center shrink-0 cursor-grab active:cursor-grabbing touch-none"
-            onPointerDown={(e) => dragControls.start(e)}
-          >
+          <div className="relative h-10 w-full flex items-center justify-center shrink-0 cursor-grab active:cursor-grabbing touch-none">
             <div className="w-12 h-1.5 bg-slate-300 rounded-full"></div>
             <button
               id="btn-sheet-close"
@@ -642,7 +650,7 @@ export default function GuestView() {
 
             {/* Main Content Area (scrollable; overscroll-contain stops the scroll bounce from
                 revealing the dark page background behind the sheet) */}
-            <div className="flex-1 overflow-y-auto overscroll-contain pb-8">
+            <div ref={sheetContentRef} className="flex-1 overflow-y-auto overscroll-contain pb-8">
               <div className="px-6 pt-2">
                 {/* Badges */}
                 <div className="flex gap-1.5 mb-2">
